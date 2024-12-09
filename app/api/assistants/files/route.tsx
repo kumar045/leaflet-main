@@ -142,9 +142,7 @@ export async function POST(request: Request) {
     }
 
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-    if (!existsSync(uploadDir)) {
-      await mkdir(uploadDir, { recursive: true });
-    }
+    await mkdir(uploadDir, { recursive: true });
 
     const originalName = (file as File).name.replace('.pdf', '');
     console.log(`Processing file: ${originalName}`);
