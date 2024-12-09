@@ -2,7 +2,7 @@ import { splitPDFIntoChunks } from '@/app/utils/pdf-processor';
 import { openai } from "@/app/openai";
 import { NextResponse } from "next/server";
 import { Buffer } from 'buffer';
-import { writeFile, mkdir } from 'fs/promises';
+import { writeFile, mkdir, unlink } from 'fs/promises';
 import path from 'path';
 import { existsSync } from 'fs';
 import { PDFDocument } from 'pdf-lib';
@@ -173,7 +173,7 @@ export async function POST(request: Request) {
       
       try {
         await writeFile(chunkPath, chunk);
-        savedFiles.push(chunkFileName);
+        savedFiles.push(chunkPath); // Changed to push the full path
 
         const uploadFormData = new FormData();
         uploadFormData.append('file', new Blob([chunk], { type: 'application/pdf' }), chunkFileName);
@@ -248,6 +248,8 @@ export async function POST(request: Request) {
       })
       .join('\n\n---\n\n');
 
+    await cleanupTempFiles(savedFiles);
+
     if (currentThread) {
       try {
         await openai.beta.threads.del(currentThread.id);
@@ -260,7 +262,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ 
       success: true, 
       simplifiedContent: assistantMessages,
-      savedFiles: savedFiles,
       uploadDir: '/uploads'
     });
 
@@ -282,6 +283,16 @@ export async function POST(request: Request) {
       { error: 'Processing error: ' + (error as Error).message },
       { status: 500 }
     );
+  }
+}
+
+async function cleanupTempFiles(files: string[]) {
+  for (const file of files) {
+    try {
+      await unlink(file);
+    } catch (error) {
+      console.warn(`Failed to delete temporary file ${file}:`, error);
+    }
   }
 }
 
