@@ -157,11 +157,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    const uploadDir = path.join('/tmp', 'uploads');
-if (!existsSync(uploadDir)) {
-  await mkdir(uploadDir, { recursive: true });
-}
-
+    // Process file and create chunks
+    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+    if (!existsSync(uploadDir)) {
+      await mkdir(uploadDir, { recursive: true });
+    }
 
     const originalName = (file as File).name.replace('.pdf', '');
     console.log(`Processing file: ${originalName}`);
@@ -193,10 +193,6 @@ if (!existsSync(uploadDir)) {
       const chunkPath = path.join(uploadDir, chunkFileName);
       
       try {
-        // Save chunk locally
-        await writeFile(chunkPath, chunk);
-        savedFiles.push(chunkFileName);
-
         // Upload to OpenAI
         const uploadFormData = new FormData();
         uploadFormData.append('file', new Blob([chunk], { type: 'application/pdf' }), chunkFileName);
