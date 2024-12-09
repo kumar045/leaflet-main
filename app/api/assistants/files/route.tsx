@@ -32,7 +32,7 @@ Prüfen und ÜberarbeitenLies den Text mehrmals, um sicherzustellen, dass alle w
 Verwende die hochgeladene Datei Anleitung zur Vereinfachung.txt
 
 Ausgabeformat
-Der finale Text soll in einfachem Deutsch verfasst werden und kurze, leicht verständliche Sätze enthalten.
+Der finale Text soll in einfachem Deutsch verfasst sein und kurze, leicht verständliche Sätze enthalten.
 Gliedere Anweisungen in nummerierte oder gepunktete Listen und präsentiere sie in einer logischen Reihenfolge, sodass die Leser den Anweisungen klar folgen können
 Versichere dich, dass der Text vollständig, ohne unnötige Details, und gleichzeitig auch ausführlich genug ist, um alle relevanten Informationen bereitzustellen.
 Der vereinfachte Text sollte im selben Format wie der ursprüngliche Text dargestellt sein.
