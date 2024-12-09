@@ -9,4 +9,6 @@ const nextConfig = {
   },
 }
 
-module.exports = nextConfig
+// Use ES modules export syntax instead of CommonJS module.exports
+export default nextConfig
+
