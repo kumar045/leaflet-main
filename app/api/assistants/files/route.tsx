@@ -33,7 +33,7 @@ Prüfen und ÜberarbeitenLies den Text mehrmals, um sicherzustellen, dass alle w
 Verwende die hochgeladene Datei Anleitung zur Vereinfachung.txt
 
 Ausgabeformat
-Der finale Text soll in einfachem Deutsch verfasst werden und kurze, leicht verständliche Sätze enthalten.
+Der finale Text soll in einfachem Deutsch verfasst sein und kurze, leicht verständliche Sätze enthalten.
 Gliedere Anweisungen in nummerierte oder gepunktete Listen und präsentiere sie in einer logischen Reihenfolge, sodass die Leser den Anweisungen klar folgen können
 Versichere dich, dass der Text vollständig, ohne unnötige Details, und gleichzeitig auch ausführlich genug ist, um alle relevanten Informationen bereitzustellen.
 Der vereinfachte Text sollte im selben Format wie der ursprüngliche Text dargestellt sein.
@@ -91,13 +91,13 @@ async function removeFromVectorStore(vectorStoreId: string, fileId: string) {
 async function removeFromOpenAI(fileId: string) {
   try {
     try {
-      const assistant = await openai.beta.assistants.retrieve(ASSISTANT_ID!) as Assistant & { file_ids?: string[] };
-      const currentFiles = assistant.file_ids || [];
+      const assistant = await openai.beta.assistants.retrieve(ASSISTANT_ID!) as Assistant & { files?: string[] };
+      const currentFiles = assistant.files || [];
       const updatedFiles = currentFiles.filter(id => id !== fileId);
       
       await openai.beta.assistants.update(ASSISTANT_ID!, {
         tools: [{ type: "file_search" }],
-        file_ids: updatedFiles
+        files: updatedFiles
       });
       console.log(`Removed file ${fileId} from assistant`);
     } catch (assistantError) {
