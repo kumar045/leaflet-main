@@ -225,7 +225,7 @@ export async function POST(request: Request) {
         // Create message with chunk info
         await openai.beta.threads.messages.create(currentThread.id, {
           role: 'user',
-          content: `bitte verarbeite diesen Text`
+          content: `Simplify des medizinischen Dokuments.`
         });
 
         // Run assistant
