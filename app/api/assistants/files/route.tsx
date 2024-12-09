@@ -6,7 +6,6 @@ import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { existsSync } from 'fs';
 import { PDFDocument } from 'pdf-lib';
-import type { Assistant } from 'openai/resources/beta/assistants';
 
 const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
 
@@ -33,7 +32,7 @@ Prüfen und ÜberarbeitenLies den Text mehrmals, um sicherzustellen, dass alle w
 Verwende die hochgeladene Datei Anleitung zur Vereinfachung.txt
 
 Ausgabeformat
-Der finale Text soll in einfachem Deutsch verfasst sein und kurze, leicht verständliche Sätze enthalten.
+Der finale Text soll in einfachem Deutsch verfasst werden und kurze, leicht verständliche Sätze enthalten.
 Gliedere Anweisungen in nummerierte oder gepunktete Listen und präsentiere sie in einer logischen Reihenfolge, sodass die Leser den Anweisungen klar folgen können
 Versichere dich, dass der Text vollständig, ohne unnötige Details, und gleichzeitig auch ausführlich genug ist, um alle relevanten Informationen bereitzustellen.
 Der vereinfachte Text sollte im selben Format wie der ursprüngliche Text dargestellt sein.
@@ -90,22 +89,20 @@ async function removeFromVectorStore(vectorStoreId: string, fileId: string) {
 
 async function removeFromOpenAI(fileId: string) {
   try {
-    try {
-      const assistant = await openai.beta.assistants.retrieve(ASSISTANT_ID!) as Assistant & { files?: string[] };
-      const currentFiles = assistant.files || [];
-      const updatedFiles = currentFiles.filter(id => id !== fileId);
-      
-      await openai.beta.assistants.update(ASSISTANT_ID!, {
-        tools: [{ type: "file_search" }],
-        files: updatedFiles
-      });
-      console.log(`Removed file ${fileId} from assistant`);
-    } catch (assistantError) {
-      console.warn(`Failed to update assistant:`, assistantError);
+    if (!ASSISTANT_ID) {
+      throw new Error('ASSISTANT_ID is not set');
     }
 
+    const assistant = await openai.beta.assistants.retrieve(ASSISTANT_ID);
+    const currentFileIds = assistant.file_ids || [];
+    const updatedFileIds = currentFileIds.filter(id => id !== fileId);
+    
+    await openai.beta.assistants.update(ASSISTANT_ID, {
+      file_ids: updatedFileIds
+    });
+    console.log(`Removed file ${fileId} from assistant`);
+
     try {
-      await openai.files.retrieve(fileId);
       await openai.files.del(fileId);
       console.log(`Deleted file ${fileId} from OpenAI`);
     } catch (error) {
@@ -198,7 +195,7 @@ export async function POST(request: Request) {
           file_ids: [currentFileUpload.id],
           model: "ft:gpt-4o-2024-08-06:health-concepts:clarifynow-001:AaMToKWY",
           instructions: ASSISTANT_INSTRUCTIONS
-        } as any);
+        });
 
         await openai.beta.threads.messages.create(currentThread.id, {
           role: 'user',
