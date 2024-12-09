@@ -2,13 +2,14 @@ import { splitPDFIntoChunks } from '@/app/utils/pdf-processor';
 import { openai } from "@/app/openai";
 import { NextResponse } from "next/server";
 import { Buffer } from 'buffer';
-import { writeFile, mkdir, unlink } from 'fs/promises';
+import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { existsSync } from 'fs';
 import { PDFDocument } from 'pdf-lib';
 
 const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
 
+// Single set of instructions
 const ASSISTANT_INSTRUCTIONS = `Verfasse Anweisungen zu pharmazeutischen und medizinischen Themen in einfacher, klarer Sprache, die für Personen mit eingeschränkter Gesundheitskompetenz leicht verständlich ist. Vermeide Fachjargon. Verwende klare und zugängliche Sprache, die dem Leseverständnis eines 12-Jährigen entspricht.
 
 Halte dich genau an die beschriebenen Ziele und achte auf die folgenden Bereiche:
@@ -17,7 +18,7 @@ Textebene: Nur notwendige Inhalte, verständlicher Stil.
 Textstruktur: Logische Abschnitte, wichtige Informationen am Anfang.
 Satzebene: Kurze Sätze, aktive Sprache.
 Wortebene: Allgemein verständliche Wörter, einfache Begriffe.
-Ansprache und Ton: Direkte Ansprache mit "Sie", freundlicher und klarer Ton.
+Ansprache und Ton: Direkte Ansprache mit “Sie”, freundlicher und klarer Ton.
 Besondere Hinweise für medizinische Texte: Patientengerechte Erklärungen.
 Schritte
 Schritt-für-Schritt-Anleitung: Teile komplexe Inhalte in einfache, klare Einzelschritte.
@@ -32,7 +33,7 @@ Prüfen und ÜberarbeitenLies den Text mehrmals, um sicherzustellen, dass alle w
 Verwende die hochgeladene Datei Anleitung zur Vereinfachung.txt
 
 Ausgabeformat
-Der finale Text soll in einfachem Deutsch verfasst sein und kurze, leicht verständliche Sätze enthalten.
+Der finale Text soll in einfachem Deutsch verfasst werden und kurze, leicht verständliche Sätze enthalten.
 Gliedere Anweisungen in nummerierte oder gepunktete Listen und präsentiere sie in einer logischen Reihenfolge, sodass die Leser den Anweisungen klar folgen können
 Versichere dich, dass der Text vollständig, ohne unnötige Details, und gleichzeitig auch ausführlich genug ist, um alle relevanten Informationen bereitzustellen.
 Der vereinfachte Text sollte im selben Format wie der ursprüngliche Text dargestellt sein.
@@ -42,6 +43,7 @@ Erläutere Fachbegriffe als erläuternde Erklärungen in Klammern, falls sie unb
 Auch sorgfältig darauf achten, dass keine Information fehlen darf, die grundlegend zum Verständnis wäre.
 Wandle den Text vollständig in einfache Sprache. Lasse auf keinen Fall Informationen weg`;
 
+// Helper function to get or create vector store
 async function getOrCreateVectorStore() {
   if (!ASSISTANT_ID) {
     throw new Error('OPENAI_ASSISTANT_ID is not set');
@@ -49,14 +51,17 @@ async function getOrCreateVectorStore() {
 
   const assistant = await openai.beta.assistants.retrieve(ASSISTANT_ID);
 
+  // Check if vector store already exists
   if (assistant.tool_resources?.file_search?.vector_store_ids?.length > 0) {
     return assistant.tool_resources.file_search.vector_store_ids[0];
   }
 
+  // Create new vector store if none exists
   const vectorStore = await openai.beta.vectorStores.create({
     name: "medical-documents-vector-store"
   });
 
+  // Update assistant with new vector store
   await openai.beta.assistants.update(ASSISTANT_ID, {
     tools: [{ type: "file_search" }],
     tool_resources: {
@@ -69,8 +74,10 @@ async function getOrCreateVectorStore() {
   return vectorStore.id;
 }
 
+// Helper function to safely delete file from vector store
 async function removeFromVectorStore(vectorStoreId: string, fileId: string) {
   try {
+    // First check if file exists in vector store
     try {
       await openai.beta.vectorStores.files.retrieve(vectorStoreId, fileId);
     } catch {
@@ -87,22 +94,27 @@ async function removeFromVectorStore(vectorStoreId: string, fileId: string) {
   }
 }
 
+// Helper function to safely delete file from OpenAI
 async function removeFromOpenAI(fileId: string) {
   try {
-    if (!ASSISTANT_ID) {
-      throw new Error('ASSISTANT_ID is not set');
+    // First update assistant to remove file
+    try {
+      const assistant = await openai.beta.assistants.retrieve(ASSISTANT_ID!);
+      const currentFiles = assistant.file_ids || [];
+      const updatedFiles = currentFiles.filter(id => id !== fileId);
+      
+      await openai.beta.assistants.update(ASSISTANT_ID!, {
+        tools: [{ type: "file_search" }],
+        file_ids: updatedFiles
+      } as any);
+      console.log(`Removed file ${fileId} from assistant`);
+    } catch (assistantError) {
+      console.warn(`Failed to update assistant:`, assistantError);
     }
 
-    const assistant = await openai.beta.assistants.retrieve(ASSISTANT_ID);
-    const currentFileIds = assistant.file_ids || [];
-    const updatedFileIds = currentFileIds.filter(id => id !== fileId);
-    
-    await openai.beta.assistants.update(ASSISTANT_ID, {
-      file_ids: updatedFileIds
-    });
-    console.log(`Removed file ${fileId} from assistant`);
-
+    // Then delete the file
     try {
+      await openai.files.retrieve(fileId); // Check if file exists
       await openai.files.del(fileId);
       console.log(`Deleted file ${fileId} from OpenAI`);
     } catch (error) {
@@ -115,9 +127,13 @@ async function removeFromOpenAI(fileId: string) {
   }
 }
 
+// Updated safe delete function
 async function safelyDeleteFile(vectorStoreId: string, fileId: string) {
   try {
+    // First remove from vector store
     await removeFromVectorStore(vectorStoreId, fileId);
+    
+    // Then remove from assistant and delete file
     await removeFromOpenAI(fileId);
   } catch (error) {
     console.warn(`Deletion process failed for ${fileId}:`, error);
@@ -127,7 +143,7 @@ async function safelyDeleteFile(vectorStoreId: string, fileId: string) {
 export async function POST(request: Request) {
   let currentThread = null;
   let vectorStoreId = null;
-  let fileUploads: string[] = [];
+  let fileUploads = [];
   let currentFileUpload = null;
   
   try {
@@ -141,8 +157,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
+    // Process file and create chunks
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-    await mkdir(uploadDir, { recursive: true });
+    if (!existsSync(uploadDir)) {
+      await mkdir(uploadDir, { recursive: true });
+    }
 
     const originalName = (file as File).name.replace('.pdf', '');
     console.log(`Processing file: ${originalName}`);
@@ -150,18 +169,22 @@ export async function POST(request: Request) {
     const bytes = await (file as Blob).arrayBuffer();
     const buffer = Buffer.from(bytes);
     
+    // Get total pages from the PDF
     const sourcePdf = await PDFDocument.load(buffer);
     const totalPages = sourcePdf.getPageCount();
     
+    // Split into chunks of 2 pages each
     const pdfChunks = await splitPDFIntoChunks(buffer, 2);
     console.log(`Split into ${pdfChunks.length} chunks (2 pages each)`);
     
     let combinedResponse = '';
-    const savedFiles: string[] = [];
+    const savedFiles = [];
     
+    // Create thread for conversation
     currentThread = await openai.beta.threads.create();
     console.log(`Created thread: ${currentThread.id}`);
     
+    // Process each chunk
     for (let i = 0; i < pdfChunks.length; i++) {
       const chunk = pdfChunks[i];
       const startPage = i * 2 + 1;
@@ -170,9 +193,11 @@ export async function POST(request: Request) {
       const chunkPath = path.join(uploadDir, chunkFileName);
       
       try {
+        // Save chunk locally
         await writeFile(chunkPath, chunk);
-        savedFiles.push(chunkPath); // Changed to push the full path
+        savedFiles.push(chunkFileName);
 
+        // Upload to OpenAI
         const uploadFormData = new FormData();
         uploadFormData.append('file', new Blob([chunk], { type: 'application/pdf' }), chunkFileName);
         uploadFormData.append('purpose', 'assistants');
@@ -184,26 +209,31 @@ export async function POST(request: Request) {
         fileUploads.push(currentFileUpload.id);
         console.log(`Uploaded pages ${startPage}-${endPage} to OpenAI: ${currentFileUpload.id}`);
 
+        // Add to vector store
         await openai.beta.vectorStores.files.create(vectorStoreId, {
           file_id: currentFileUpload.id,
         });
 
+        // Update assistant with current file
         await openai.beta.assistants.update(ASSISTANT_ID!, {
           tools: [{ type: "file_search" }],
           file_ids: [currentFileUpload.id],
           model: "ft:gpt-4o-2024-08-06:health-concepts:clarifynow-001:AaMToKWY",
           instructions: ASSISTANT_INSTRUCTIONS
-        });
+        } as any);
 
+        // Create message with chunk info
         await openai.beta.threads.messages.create(currentThread.id, {
           role: 'user',
           content: `Simplify des medizinischen Dokuments.`
         });
 
+        // Run assistant
         const run = await openai.beta.threads.runs.create(currentThread.id, {
           assistant_id: ASSISTANT_ID!
         });
 
+        // Wait for completion
         let runStatus = await openai.beta.threads.runs.retrieve(currentThread.id, run.id);
         let attempts = 0;
         const maxAttempts = 120;
@@ -212,7 +242,7 @@ export async function POST(request: Request) {
           await new Promise(resolve => setTimeout(resolve, 1000));
           runStatus = await openai.beta.threads.runs.retrieve(currentThread.id, run.id);
           
-          if (attempts % 10 === 0) {
+          if (attempts % 10 === 0) { // Log every 10 seconds
             console.log(`Processing chunk ${i + 1}/${pdfChunks.length}: ${runStatus.status} (${attempts}s)`);
           }
           
@@ -222,6 +252,7 @@ export async function POST(request: Request) {
           attempts++;
         }
 
+        // Clean up after processing
         if (currentFileUpload?.id) {
           await safelyDeleteFile(vectorStoreId!, currentFileUpload.id);
         }
@@ -235,6 +266,7 @@ export async function POST(request: Request) {
       }
     }
 
+    // Get all responses
     const messages = await openai.beta.threads.messages.list(currentThread.id);
     const assistantMessages = messages.data
       .filter(msg => msg.role === 'assistant')
@@ -246,8 +278,7 @@ export async function POST(request: Request) {
       })
       .join('\n\n---\n\n');
 
-    await cleanupTempFiles(savedFiles);
-
+    // Clean up thread
     if (currentThread) {
       try {
         await openai.beta.threads.del(currentThread.id);
@@ -260,10 +291,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ 
       success: true, 
       simplifiedContent: assistantMessages,
+      savedFiles: savedFiles,
       uploadDir: '/uploads'
     });
 
   } catch (error) {
+    // Clean up on error
     for (const fileId of fileUploads) {
       await safelyDeleteFile(vectorStoreId!, fileId);
     }
@@ -284,16 +317,7 @@ export async function POST(request: Request) {
   }
 }
 
-async function cleanupTempFiles(files: string[]) {
-  for (const file of files) {
-    try {
-      await unlink(file);
-    } catch (error) {
-      console.warn(`Failed to delete temporary file ${file}:`, error);
-    }
-  }
-}
-
+// DELETE endpoint for manual file cleanup
 export async function DELETE(request: Request) {
   try {
     const body = await request.json();
@@ -313,6 +337,7 @@ export async function DELETE(request: Request) {
   }
 }
 
+// GET endpoint with error handling
 export async function GET() {
   try {
     const vectorStoreId = await getOrCreateVectorStore();
@@ -338,6 +363,7 @@ export async function GET() {
       })
     );
 
+    // Filter out failed retrievals
     const validFiles = filesArray.filter(file => file !== null);
 
     return Response.json(validFiles);
@@ -346,4 +372,3 @@ export async function GET() {
     return new Response('Failed to list files: ' + (error as Error).message, { status: 500 });
   }
 }
-
