@@ -7,7 +7,7 @@ import path from 'path';
 import { existsSync } from 'fs';
 import { PDFDocument } from 'pdf-lib';
 
-const ASSISTANT_ID = "asst_PCA58DCoRnRnKZBh4ZfpwLDg";
+const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
 
 // Single set of instructions
 const ASSISTANT_INSTRUCTIONS = `Verfasse Anweisungen zu pharmazeutischen und medizinischen Themen in einfacher, klarer Sprache, die für Personen mit eingeschränkter Gesundheitskompetenz leicht verständlich ist. Vermeide Fachjargon. Verwende klare und zugängliche Sprache, die dem Leseverständnis eines 12-Jährigen entspricht.
